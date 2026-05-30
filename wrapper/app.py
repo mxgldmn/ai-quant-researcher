@@ -38,7 +38,7 @@ _runs: dict[str, dict[str, Any]] = {}
 class RunRequest(BaseModel):
     market_description: str = Field(..., min_length=5)
     market_type: str = "generic"
-    iterations: int = Field(20, ge=1, le=200)
+    iterations: int = Field(20, ge=1, le=1000)
     target_survivors: int = Field(3, ge=1, le=20)
     cost_bps: float = Field(8.0, ge=0.0, le=100.0)
     ticker: str = Field("", description="If set, fetch real prices via defeatbeta. Leave blank for synthetic data.")
