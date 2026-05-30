@@ -19,12 +19,12 @@ def _read_env(name: str, default: str) -> str:
 class Settings(BaseModel):
     """Runtime configuration. Loaded once at import time; override per-test via `Settings(...)`."""
 
-    anthropic_api_key: str | None = Field(
-        default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY"),
+    gemini_api_key: str | None = Field(
+        default_factory=lambda: os.environ.get("GEMINI_API_KEY"),
         description="Optional. Examples 01-05 run without it.",
     )
     model: str = Field(
-        default_factory=lambda: _read_env("AI_QUANT_LAB_MODEL", "claude-sonnet-4-6"),
+        default_factory=lambda: _read_env("AI_QUANT_LAB_MODEL", "gemini-3.1-flash-lite"),
     )
 
     max_llm_calls: int = Field(
@@ -62,13 +62,13 @@ class Settings(BaseModel):
 
     def require_api_key(self) -> str:
         """Used by agent modules. Raises with a helpful message if the key is missing."""
-        if not self.anthropic_api_key:
+        if not self.gemini_api_key:
             raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set. "
+                "GEMINI_API_KEY is not set. "
                 "Examples 06-08 and `python -m ai_quant_lab.run` need a key. "
-                "Run `cp .env.example .env` and fill it in, or `export ANTHROPIC_API_KEY=...`."
+                "Run `cp .env.example .env` and fill it in, or `export GEMINI_API_KEY=...`."
             )
-        return self.anthropic_api_key
+        return self.gemini_api_key
 
 
 settings = Settings()
