@@ -699,6 +699,7 @@ textarea#market-desc::placeholder { color: var(--text-dim); }
   <div class="feed-panel">
     <div class="panel-title">
       HYPOTHESIS PIPELINE
+      <span id="status-msg" style="font-size:9px;color:var(--cyan);margin-left:10px;font-weight:400"></span>
       <div class="legend">
         <div class="legend-item"><div class="legend-dot cyan"></div>ACTIVE</div>
         <div class="legend-item"><div class="legend-dot green"></div>ACCEPTED</div>
@@ -841,9 +842,18 @@ async function startRun() {
 function handleEvent(d) {
   switch (d.type) {
 
+    case 'run_started':
+      setStatusMsg('LLM agents initializing...');
+      break;
+
+    case 'status':
+      setStatusMsg(d.message || '');
+      break;
+
     case 'proposed':
       st.tested++;
       updateStats();
+      setStatusMsg('');
       createCard(d);
       break;
 
@@ -1060,6 +1070,12 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ─── STATUS MSG ──────────────────────────────────────────────────────────────
+function setStatusMsg(msg) {
+  const el = document.getElementById('status-msg');
+  if (el) el.textContent = msg ? `● ${msg}` : '';
 }
 
 // ─── EXPAND / COLLAPSE ───────────────────────────────────────────────────────

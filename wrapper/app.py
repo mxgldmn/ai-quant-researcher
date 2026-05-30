@@ -67,8 +67,11 @@ def _run_in_thread(run_id: str, request: RunRequest, q: "queue.Queue[dict]") -> 
         q.put(event)
 
     try:
+        emit({"type": "run_started"})
         if request.ticker:
+            emit({"type": "status", "message": f"Fetching {request.ticker} price data..."})
             price_data = _fetch_prices(request.ticker)
+            emit({"type": "status", "message": f"Loaded {len(price_data)} bars for {request.ticker}"})
         else:
             price_data = _synthetic_prices()
         config = LoopConfig(
@@ -119,7 +122,7 @@ async def stream_run(run_id: str) -> StreamingResponse:
 
         def _get() -> dict | None:
             try:
-                return q.get(timeout=25.0)
+                return q.get(timeout=3.0)
             except queue.Empty:
                 return None
 
