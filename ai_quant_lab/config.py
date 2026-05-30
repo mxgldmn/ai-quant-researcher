@@ -21,7 +21,9 @@ class Settings(BaseModel):
 
     gemini_api_key: str | None = Field(
         default_factory=lambda: os.environ.get("GEMINI_API_KEY"),
-        description="Optional. Examples 01-05 run without it.",
+    )
+    groq_api_key: str | None = Field(
+        default_factory=lambda: os.environ.get("GROQ_API_KEY"),
     )
     model: str = Field(
         default_factory=lambda: _read_env("AI_QUANT_LAB_MODEL", "gemini-3.1-flash-lite"),
@@ -60,15 +62,20 @@ class Settings(BaseModel):
         default_factory=lambda: Path(_read_env("AI_QUANT_LAB_MEMORY_DB", "./memory.db")),
     )
 
-    def require_api_key(self) -> str:
-        """Used by agent modules. Raises with a helpful message if the key is missing."""
-        if not self.gemini_api_key:
-            raise RuntimeError(
-                "GEMINI_API_KEY is not set. "
-                "Examples 06-08 and `python -m ai_quant_lab.run` need a key. "
-                "Run `cp .env.example .env` and fill it in, or `export GEMINI_API_KEY=...`."
-            )
-        return self.gemini_api_key
+    def require_api_key(self, model: str | None = None) -> tuple[str, str]:
+        """Return (api_key, provider) for the given model, or the default model.
+
+        Provider is 'gemini' or 'groq'.
+        """
+        use_model = model or self.model
+        if use_model.startswith("gemini"):
+            if not self.gemini_api_key:
+                raise RuntimeError("GEMINI_API_KEY is not set.")
+            return self.gemini_api_key, "gemini"
+        else:
+            if not self.groq_api_key:
+                raise RuntimeError("GROQ_API_KEY is not set.")
+            return self.groq_api_key, "groq"
 
 
 settings = Settings()

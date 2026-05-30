@@ -73,37 +73,52 @@ def call_llm(
     model: str | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.4,
-    cache_system: bool = True,  # accepted for API compat; Gemini context caching not implemented
+    cache_system: bool = True,  # no-op kept for call-site compatibility
     max_retries: int = 3,
 ) -> AgentResponse:
-    """Call Gemini with retries.
+    """Call the configured LLM (Gemini or Groq) with retries.
 
-    Args:
-        system: System prompt passed as system_instruction.
-        messages: User/assistant turns. "assistant" role is mapped to "model" for Gemini.
-        model: Override the configured model.
-        max_tokens: Output token budget.
-        temperature: Sampling temperature.
-        cache_system: No-op (kept for call-site compatibility with the old Anthropic wrapper).
-        max_retries: Number of retries on transient API errors.
-
-    Returns:
-        AgentResponse with text, usage dict, and model id.
-
-    Raises:
-        RuntimeError: if no API key is configured or all retries fail.
+    Provider is selected automatically from the model name:
+    models starting with "gemini" use the Google GenAI SDK;
+    everything else uses the Groq SDK (OpenAI-compatible).
     """
-    api_key = settings.require_api_key()
+    use_model = model or settings.model
+    api_key, provider = settings.require_api_key(use_model)
+
+    delay = 1.0
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            if provider == "gemini":
+                response = _call_gemini(system, messages, api_key, use_model, max_tokens, temperature)
+            else:
+                response = _call_groq(system, messages, api_key, use_model, max_tokens, temperature)
+            return response
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt == max_retries - 1:
+                break
+            time.sleep(delay)
+            delay *= 2.0
+
+    raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")
+
+
+def _call_gemini(
+    system: str,
+    messages: Sequence[AgentMessage],
+    api_key: str,
+    model: str,
+    max_tokens: int,
+    temperature: float,
+) -> AgentResponse:
     try:
         from google import genai  # noqa: PLC0415
         from google.genai import types  # noqa: PLC0415
     except ImportError as exc:
-        raise ImportError("Install the SDK: pip install google-genai") from exc
+        raise ImportError("pip install google-genai") from exc
 
     client = genai.Client(api_key=api_key)
-    use_model = model or settings.model
-
-    # Gemini uses "model" instead of "assistant" for the AI turn role.
     contents = [
         types.Content(
             role="model" if m.role == "assistant" else m.role,
@@ -111,47 +126,55 @@ def call_llm(
         )
         for m in messages
     ]
-
     config = types.GenerateContentConfig(
         system_instruction=system,
         max_output_tokens=max_tokens,
         temperature=temperature,
     )
+    response = client.models.generate_content(model=model, contents=contents, config=config)
+    text = response.text or ""
+    um = response.usage_metadata
+    usage = {
+        "input_tokens": um.prompt_token_count or 0,
+        "output_tokens": um.candidates_token_count or 0,
+        "cache_read_tokens": um.cached_content_token_count or 0,
+        "cache_creation_tokens": 0,
+    }
+    finish_reason = str(response.candidates[0].finish_reason) if response.candidates else None
+    return AgentResponse(text=text, usage=usage, model=model, stop_reason=finish_reason)
 
-    delay = 1.0
-    last_error: Exception | None = None
-    for attempt in range(max_retries):
-        try:
-            response = client.models.generate_content(
-                model=use_model,
-                contents=contents,
-                config=config,
-            )
-            text = response.text or ""
-            um = response.usage_metadata
-            usage = {
-                "input_tokens": um.prompt_token_count or 0,
-                "output_tokens": um.candidates_token_count or 0,
-                "cache_read_tokens": um.cached_content_token_count or 0,
-                "cache_creation_tokens": 0,
-            }
-            finish_reason = None
-            if response.candidates:
-                finish_reason = str(response.candidates[0].finish_reason)
-            return AgentResponse(
-                text=text,
-                usage=usage,
-                model=use_model,
-                stop_reason=finish_reason,
-            )
-        except Exception as exc:  # noqa: BLE001 — broad catch is intentional; we retry below
-            last_error = exc
-            if attempt == max_retries - 1:
-                break
-            time.sleep(delay)
-            delay *= 2.0
 
-    raise RuntimeError(f"Gemini call failed after {max_retries} attempts: {last_error}")
+def _call_groq(
+    system: str,
+    messages: Sequence[AgentMessage],
+    api_key: str,
+    model: str,
+    max_tokens: int,
+    temperature: float,
+) -> AgentResponse:
+    try:
+        from groq import Groq  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError("pip install groq") from exc
+
+    client = Groq(api_key=api_key)
+    api_messages = [{"role": "system", "content": system}]
+    api_messages += [{"role": m.role, "content": m.content} for m in messages]
+    response = client.chat.completions.create(
+        model=model,
+        messages=api_messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    text = response.choices[0].message.content or ""
+    usage = {
+        "input_tokens": response.usage.prompt_tokens if response.usage else 0,
+        "output_tokens": response.usage.completion_tokens if response.usage else 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+    }
+    finish_reason = response.choices[0].finish_reason if response.choices else None
+    return AgentResponse(text=text, usage=usage, model=model, stop_reason=finish_reason)
 
 
 # Backward-compatible alias so existing call sites don't need updating.

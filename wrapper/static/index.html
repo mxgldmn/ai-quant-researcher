@@ -649,6 +649,10 @@ textarea#market-desc::placeholder { color: var(--text-dim); }
       <div class="stat-label">DATA</div>
       <div class="stat-value" id="s-data" style="font-size:13px">—</div>
     </div>
+    <div class="stat">
+      <div class="stat-label">MODEL</div>
+      <div class="stat-value" id="s-model" style="font-size:10px;color:var(--purple)">—</div>
+    </div>
   </div>
   <div class="status-pill" id="status-pill">IDLE</div>
   <div class="clock" id="clock"></div>
@@ -687,6 +691,20 @@ textarea#market-desc::placeholder { color: var(--text-dim); }
     <div class="cfg">
       <div class="ctrl-label">Ticker (opt)</div>
       <input type="text" id="cfg-ticker" placeholder="SPY" style="width:64px;text-transform:uppercase">
+    </div>
+    <div class="cfg">
+      <div class="ctrl-label">Model</div>
+      <select id="cfg-model" style="width:200px">
+        <optgroup label="Groq">
+          <option value="qwen/qwen3-32b">qwen3-32b (Groq)</option>
+          <option value="llama-3.3-70b-versatile">llama-3.3-70b (Groq)</option>
+          <option value="meta-llama/llama-4-scout-17b-16e-instruct">llama-4-scout-17b (Groq)</option>
+        </optgroup>
+        <optgroup label="Gemini">
+          <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+          <option value="gemini-3.1-flash">gemini-3.1-flash</option>
+        </optgroup>
+      </select>
     </div>
     <button id="run-btn" onclick="startRun()">▶ RUN</button>
   </div>
@@ -798,11 +816,13 @@ async function startRun() {
     target_survivors: parseInt(document.getElementById('cfg-target').value) || 3,
     cost_bps: parseFloat(document.getElementById('cfg-cost').value) || 8,
     ticker: document.getElementById('cfg-ticker').value.trim().toUpperCase(),
+    model: document.getElementById('cfg-model').value,
   };
 
   document.getElementById('run-btn').disabled = true;
   setStatus('running', 'RUNNING');
   document.getElementById('s-data').textContent = body.ticker || 'SYNTHETIC';
+  document.getElementById('s-model').textContent = body.model.split('/').pop();
   startTimer();
 
   let runId;

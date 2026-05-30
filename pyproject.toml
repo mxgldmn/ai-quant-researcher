@@ -40,6 +40,7 @@ web = [
     "fastapi>=0.111",
     "uvicorn>=0.29",
     "yfinance>=0.2",
+    "groq>=0.9",
 ]
 
 [project.scripts]

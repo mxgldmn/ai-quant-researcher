@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from ai_quant_lab.agents import CodeAgent, CriticAgent, HypothesisAgent
 from ai_quant_lab.agents.memory import ResearchMemory
 from ai_quant_lab.backtest import BacktestConfig
 from ai_quant_lab.orchestrator.loop import LoopConfig, run_research_loop
@@ -41,7 +42,8 @@ class RunRequest(BaseModel):
     iterations: int = Field(20, ge=1, le=1000)
     target_survivors: int = Field(3, ge=1, le=20)
     cost_bps: float = Field(8.0, ge=0.0, le=100.0)
-    ticker: str = Field("", description="If set, fetch real prices via defeatbeta. Leave blank for synthetic data.")
+    ticker: str = Field("", description="If set, fetch real prices via yfinance. Leave blank for synthetic data.")
+    model: str = Field("", description="Override model. Empty = use AI_QUANT_LAB_MODEL env var.")
 
 
 def _fetch_prices(ticker: str) -> pd.Series:
@@ -81,12 +83,16 @@ def _run_in_thread(run_id: str, request: RunRequest, q: "queue.Queue[dict]") -> 
             target_survivors=request.target_survivors,
             backtest_config=BacktestConfig(cost_bps=request.cost_bps),
         )
+        mdl = request.model or None
         db_path = Path(f"./memory_{run_id}.db")
         with ResearchMemory(db_path) as memory:
             run_research_loop(
                 price_data,
                 config,
                 memory=memory,
+                hypothesis_agent=HypothesisAgent(model=mdl),
+                code_agent=CodeAgent(model=mdl),
+                critic_agent=CriticAgent(market_type=request.market_type, model=mdl),
                 log=lambda _: None,
                 on_event=emit,
             )
