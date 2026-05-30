@@ -44,8 +44,12 @@ def extract_first_json(text: str) -> dict[str, Any]:
     the first {...} block. Falls back to json_repair for malformed LLM output.
     Raises ValueError if nothing parses.
     """
-    # Strip <think>...</think> blocks emitted by reasoning models (e.g. Qwen3).
-    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+    # Strip <think>...</think> blocks from reasoning models (e.g. Qwen3).
+    # Handle both closed tags and responses truncated mid-thought (no </think>).
+    if "<think>" in text:
+        close = text.find("</think>")
+        text = text[close + len("</think>"):] if close != -1 else ""
+    cleaned = text.strip()
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
@@ -171,7 +175,12 @@ def _call_groq(
 
     client = Groq(api_key=api_key)
     api_messages = [{"role": "system", "content": system}]
-    api_messages += [{"role": m.role, "content": m.content} for m in messages]
+    for i, m in enumerate(messages):
+        content = m.content
+        # /no_think disables Qwen3's reasoning chain, keeping output concise and JSON-safe.
+        if "qwen3" in model.lower() and i == 0 and m.role == "user":
+            content = "/no_think\n" + content
+        api_messages.append({"role": m.role, "content": content})
     response = client.chat.completions.create(
         model=model,
         messages=api_messages,
