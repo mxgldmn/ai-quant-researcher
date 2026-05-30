@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 import pandas as pd
 
@@ -62,8 +62,13 @@ def run_research_loop(
     code_agent: CodeAgent | None = None,
     critic_agent: CriticAgent | None = None,
     log: Callable[[str], None] = print,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[LoopArtifact], list[TrialRecord]]:
     """Drive the loop until `target_survivors` or `iterations` is hit.
+
+    Args:
+        on_event: Optional callback fired at each pipeline stage with a typed event dict.
+            Event types: proposed, critic_pass, rejected, backtest, accepted, run_complete.
 
     Returns:
         (artifacts, survivors) — full per-iteration log and the accepted set.
@@ -78,13 +83,16 @@ def run_research_loop(
     # honor every prior survivor when checking the correlation gate.
     accepted_returns: list[pd.Series] = list(memory.accepted_returns())
     llm_calls = 0
+    stop_reason = "iterations_exhausted"
 
     for iteration in range(config.iterations):
         if len(survivors) >= config.target_survivors:
             log(f"[done] reached target_survivors={config.target_survivors}")
+            stop_reason = "target_reached"
             break
         if llm_calls >= config.max_llm_calls:
             log(f"[done] max_llm_calls={config.max_llm_calls} reached")
+            stop_reason = "max_llm_calls"
             break
 
         artifact = _run_iteration(
@@ -98,6 +106,7 @@ def run_research_loop(
             code_agent=code_agent,
             critic_agent=critic_agent,
             log=log,
+            on_event=on_event,
         )
         artifacts.append(artifact)
         llm_calls += _llm_calls_per_iteration(artifact)
@@ -106,6 +115,14 @@ def run_research_loop(
             # Re-source from memory so every consumer sees the same truth.
             survivors = list(memory.survivors())
             accepted_returns = list(memory.accepted_returns())
+
+    if on_event:
+        on_event({
+            "type": "run_complete",
+            "stop_reason": stop_reason,
+            "n_survivors": len(survivors),
+            "n_iterations": len(artifacts),
+        })
 
     return artifacts, survivors
 
@@ -122,7 +139,12 @@ def _run_iteration(
     code_agent: CodeAgent,
     critic_agent: CriticAgent,
     log: Callable[[str], None],
+    on_event: Callable[[dict[str, Any]], None] | None,
 ) -> LoopArtifact:
+    def emit(event: dict[str, Any]) -> None:
+        if on_event:
+            on_event({"iteration": iteration, **event})
+
     summary = memory.summarize_for_prompt(limit=10)
     survivor_titles = [t.hypothesis_text for t in survivors]
     hypothesis = hypothesis_agent.propose(
@@ -131,10 +153,26 @@ def _run_iteration(
         avoid_correlation_with=survivor_titles,
     )
     log(f"[{iteration:03d}] propose: {hypothesis.hypothesis_id} — {hypothesis.title}")
+    emit({
+        "type": "proposed",
+        "id": hypothesis.hypothesis_id,
+        "title": hypothesis.title,
+        "rationale": hypothesis.rationale,
+        "expected_sharpe": list(hypothesis.expected_sharpe_range),
+        "works_in": hypothesis.works_in_regime,
+        "breaks_in": hypothesis.breaks_in_regime,
+    })
 
     verdict = critic_agent.review(hypothesis)
     if not verdict.passes:
         log(f"[{iteration:03d}] critic killed: {verdict.reasoning[:90]}")
+        emit({
+            "type": "rejected",
+            "id": hypothesis.hypothesis_id,
+            "title": hypothesis.title,
+            "stage": "critic",
+            "reason": verdict.reasoning[:300],
+        })
         memory.record(
             TrialRecord(
                 hypothesis_id=hypothesis.hypothesis_id,
@@ -158,11 +196,20 @@ def _run_iteration(
             gate_outcome=None,
         )
 
+    emit({"type": "critic_pass", "id": hypothesis.hypothesis_id})
+
     code = code_agent.render(hypothesis)
     try:
         sandbox_result = run_strategy(code.source, price_data)
     except SandboxError as exc:
         log(f"[{iteration:03d}] sandbox error: {exc}")
+        emit({
+            "type": "rejected",
+            "id": hypothesis.hypothesis_id,
+            "title": hypothesis.title,
+            "stage": "sandbox",
+            "reason": str(exc)[:300],
+        })
         memory.record(
             TrialRecord(
                 hypothesis_id=hypothesis.hypothesis_id,
@@ -188,6 +235,17 @@ def _run_iteration(
 
     returns = price_data.pct_change().fillna(0.0)
     result = vectorized_backtest(sandbox_result.positions, returns, config=config.backtest_config)
+    emit({
+        "type": "backtest",
+        "id": hypothesis.hypothesis_id,
+        "sharpe": round(float(result.metrics.get("sharpe_ratio", 0.0)), 3),
+        "annual_return": round(float(result.metrics.get("annual_return", 0.0)), 4),
+        "max_drawdown": round(float(result.metrics.get("max_drawdown", 0.0)), 4),
+        "win_rate": round(float(result.metrics.get("win_rate", 0.0)), 4),
+        "turnover": round(float(result.metrics.get("turnover", 0.0)), 4),
+        "cumulative_return": round(float(result.metrics.get("cumulative_return", 0.0)), 4),
+    })
+
     gate_outcome = evaluate_gates(
         critic_verdict=verdict,
         strategy_returns=result.returns,
@@ -225,6 +283,26 @@ def _run_iteration(
 
     if gate_outcome.passes:
         accepted_returns.append(result.returns)
+        emit({
+            "type": "accepted",
+            "id": hypothesis.hypothesis_id,
+            "title": hypothesis.title,
+            "sharpe": round(float(result.metrics.get("sharpe_ratio", 0.0)), 3),
+            "annual_return": round(float(result.metrics.get("annual_return", 0.0)), 4),
+            "max_drawdown": round(float(result.metrics.get("max_drawdown", 0.0)), 4),
+            "win_rate": round(float(result.metrics.get("win_rate", 0.0)), 4),
+            "cumulative_return": round(float(result.metrics.get("cumulative_return", 0.0)), 4),
+            "turnover": round(float(result.metrics.get("turnover", 0.0)), 4),
+        })
+    else:
+        emit({
+            "type": "rejected",
+            "id": hypothesis.hypothesis_id,
+            "title": hypothesis.title,
+            "stage": "gate",
+            "reason": gate_outcome.rejection_reason or "unknown_gate_failure",
+            "sharpe": round(float(result.metrics.get("sharpe_ratio", 0.0)), 3),
+        })
 
     return LoopArtifact(
         iteration=iteration,
