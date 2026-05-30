@@ -744,11 +744,6 @@ async function startRun() {
     '<div class="empty-sidebar" id="empty-survivors">Waiting for first acceptance...</div>';
   updateStats();
 
-  document.getElementById('run-btn').disabled = true;
-  setStatus('running', 'RUNNING');
-  document.getElementById('s-data').textContent = body.ticker || 'SYNTHETIC';
-  startTimer();
-
   const body = {
     market_description: desc,
     market_type: document.getElementById('market-type').value,
@@ -757,6 +752,11 @@ async function startRun() {
     cost_bps: parseFloat(document.getElementById('cfg-cost').value) || 8,
     ticker: document.getElementById('cfg-ticker').value.trim().toUpperCase(),
   };
+
+  document.getElementById('run-btn').disabled = true;
+  setStatus('running', 'RUNNING');
+  document.getElementById('s-data').textContent = body.ticker || 'SYNTHETIC';
+  startTimer();
 
   let runId;
   try {
