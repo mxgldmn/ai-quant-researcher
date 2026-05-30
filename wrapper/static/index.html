@@ -38,6 +38,8 @@ html, body {
   font-size: 12px;
   line-height: 1.5;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ─── TOP BAR ─── */
@@ -531,6 +533,50 @@ textarea#market-desc::placeholder { color: var(--text-dim); }
   background: rgba(255,215,0,0.04);
 }
 
+/* ─── EXPAND / COLLAPSE ─── */
+.card-toggle {
+  margin-top: 6px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+.card-toggle:hover { color: var(--cyan); }
+
+.card-expanded {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+.card-expanded.open { display: flex; }
+
+.exp-section {}
+.exp-label {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.exp-text {
+  font-size: 10px;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.exp-text.pass { color: var(--green-dim); }
+.exp-text.kill { color: var(--red); opacity: 0.85; }
+
 /* ─── ANIMATIONS ─── */
 @keyframes blink {
   0%, 100% { opacity: 1; }
@@ -804,6 +850,7 @@ function handleEvent(d) {
     case 'critic_pass':
       setStage(d.id, 'critic', 'pass', 'CRITIC ✓');
       setStage(d.id, 'backtest', 'active', 'BACKTEST…');
+      setCriticExpand(d.id, d.reasoning || '', false);
       break;
 
     case 'rejected':
@@ -812,7 +859,10 @@ function handleEvent(d) {
         updateStats();
         setStage(d.id, 'critic', 'killed', 'CRITIC ✗');
         setCardStatus(d.id, 'rejected', 'KILLED', 'badge-killed');
-        setDetail(d.id, `<div class="kill-reason">${esc(d.reason)}</div>`);
+        setDetail(d.id, '');
+        setCriticExpand(d.id, d.reason || '', true);
+        // Auto-open the expand section on kills so the reason is visible
+        openExpand(d.id);
       } else if (d.stage === 'sandbox') {
         setStage(d.id, 'backtest', 'killed', 'CODE ERR');
         setCardStatus(d.id, 'rejected', 'CODE ERR', 'badge-killed');
@@ -883,8 +933,19 @@ function createCard(d) {
       <span class="pipe-arrow">→</span>
       <div class="stage pending" id="st-${d.id}-gate">GATES</div>
     </div>
-    <div class="card-detail" id="det-${d.id}">
-      <div style="color:var(--text-dim);font-size:10px;font-style:italic">${esc(d.rationale || '')}</div>
+    <div class="card-detail" id="det-${d.id}"></div>
+    <div class="card-toggle" onclick="toggleExpand('${d.id}')">
+      <span id="tog-${d.id}">▼</span> DETAILS
+    </div>
+    <div class="card-expanded" id="exp-${d.id}">
+      <div class="exp-section">
+        <div class="exp-label">Hypothesis Rationale</div>
+        <div class="exp-text">${esc(d.rationale || '')}</div>
+      </div>
+      <div class="exp-section" id="critic-exp-${d.id}" style="display:none">
+        <div class="exp-label">Critic Response</div>
+        <div class="exp-text" id="critic-txt-${d.id}"></div>
+      </div>
     </div>
   `;
 
@@ -999,6 +1060,32 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ─── EXPAND / COLLAPSE ───────────────────────────────────────────────────────
+function toggleExpand(id) {
+  const exp = document.getElementById(`exp-${id}`);
+  const arrow = document.getElementById(`tog-${id}`);
+  if (!exp) return;
+  const open = exp.classList.toggle('open');
+  if (arrow) arrow.textContent = open ? '▲' : '▼';
+}
+
+function openExpand(id) {
+  const exp = document.getElementById(`exp-${id}`);
+  const arrow = document.getElementById(`tog-${id}`);
+  if (!exp) return;
+  exp.classList.add('open');
+  if (arrow) arrow.textContent = '▲';
+}
+
+function setCriticExpand(id, text, killed) {
+  const section = document.getElementById(`critic-exp-${id}`);
+  const txt = document.getElementById(`critic-txt-${id}`);
+  if (!section || !txt) return;
+  section.style.display = 'block';
+  txt.textContent = text;
+  txt.className = `exp-text ${killed ? 'kill' : 'pass'}`;
 }
 
 // ─── ERROR TOAST ─────────────────────────────────────────────────────────────

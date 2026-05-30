@@ -196,7 +196,7 @@ def _run_iteration(
             gate_outcome=None,
         )
 
-    emit({"type": "critic_pass", "id": hypothesis.hypothesis_id})
+    emit({"type": "critic_pass", "id": hypothesis.hypothesis_id, "reasoning": verdict.reasoning[:400]})
 
     code = code_agent.render(hypothesis)
     try:
