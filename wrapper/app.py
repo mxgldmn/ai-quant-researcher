@@ -140,4 +140,4 @@ async def stream_run(run_id: str) -> StreamingResponse:
 @app.get("/")
 async def index() -> HTMLResponse:
     html = Path(__file__).parent / "static" / "index.html"
-    return HTMLResponse(html.read_text())
+    return HTMLResponse(html.read_text(encoding="utf-8"))
