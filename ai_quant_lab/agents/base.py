@@ -44,7 +44,8 @@ def extract_first_json(text: str) -> dict[str, Any]:
     the first {...} block. Falls back to json_repair for malformed LLM output.
     Raises ValueError if nothing parses.
     """
-    cleaned = text.strip()
+    # Strip <think>...</think> blocks emitted by reasoning models (e.g. Qwen3).
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
