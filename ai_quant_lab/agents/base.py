@@ -41,7 +41,8 @@ def extract_first_json(text: str) -> dict[str, Any]:
     """Extract the first JSON object from an LLM response.
 
     Tries direct json.loads first, then strips markdown fences, then matches
-    the first {...} block. Raises ValueError if nothing parses.
+    the first {...} block. Falls back to json_repair for malformed LLM output.
+    Raises ValueError if nothing parses.
     """
     cleaned = text.strip()
     try:
@@ -58,12 +59,22 @@ def extract_first_json(text: str) -> dict[str, Any]:
 
     match = _JSON_BLOCK_RE.search(cleaned)
     if match:
+        block = match.group(0)
         try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Found JSON-like block but could not parse: {exc}") from exc
+            return json.loads(block)
+        except json.JSONDecodeError:
+            pass
+        # Groq/Qwen models often emit minor syntax errors; try to repair.
+        try:
+            from json_repair import repair_json  # noqa: PLC0415
+            repaired = repair_json(block)
+            result = json.loads(repaired)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
 
-    raise ValueError(f"No JSON object found in response:\n{cleaned[:500]}")
+    raise ValueError(f"No valid JSON object found in response:\n{cleaned[:500]}")
 
 
 def call_llm(

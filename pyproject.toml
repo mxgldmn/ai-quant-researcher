@@ -26,6 +26,7 @@ dependencies = [
     "scipy>=1.11",
     "google-genai>=1.0",
     "pydantic>=2.5",
+    "json-repair>=0.30",
 ]
 
 [project.optional-dependencies]
