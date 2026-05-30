@@ -41,6 +41,15 @@ class RunRequest(BaseModel):
     iterations: int = Field(20, ge=1, le=200)
     target_survivors: int = Field(3, ge=1, le=20)
     cost_bps: float = Field(8.0, ge=0.0, le=100.0)
+    ticker: str = Field("", description="If set, fetch real prices via defeatbeta. Leave blank for synthetic data.")
+
+
+def _fetch_prices(ticker: str) -> pd.Series:
+    from defeatbeta_api.data.ticker import Ticker  # noqa: PLC0415
+    df = Ticker(ticker.upper()).price()
+    df["report_date"] = pd.to_datetime(df["report_date"])
+    df = df.sort_values("report_date").set_index("report_date")
+    return df["close"].rename(ticker.upper())
 
 
 def _synthetic_prices(n_bars: int = 2520, seed: int = 42) -> pd.Series:
@@ -56,7 +65,10 @@ def _run_in_thread(run_id: str, request: RunRequest, q: "queue.Queue[dict]") -> 
         q.put(event)
 
     try:
-        price_data = _synthetic_prices()
+        if request.ticker:
+            price_data = _fetch_prices(request.ticker)
+        else:
+            price_data = _synthetic_prices()
         config = LoopConfig(
             market_description=request.market_description,
             market_type=request.market_type,

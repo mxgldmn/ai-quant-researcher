@@ -599,6 +599,10 @@ textarea#market-desc::placeholder { color: var(--text-dim); }
       <div class="stat-label">ELAPSED</div>
       <div class="stat-value" id="s-elapsed">—</div>
     </div>
+    <div class="stat">
+      <div class="stat-label">DATA</div>
+      <div class="stat-value" id="s-data" style="font-size:13px">—</div>
+    </div>
   </div>
   <div class="status-pill" id="status-pill">IDLE</div>
   <div class="clock" id="clock"></div>
@@ -633,6 +637,10 @@ textarea#market-desc::placeholder { color: var(--text-dim); }
     <div class="cfg">
       <div class="ctrl-label">Cost (bps)</div>
       <input type="number" id="cfg-cost" value="8" min="0" max="100" step="0.5">
+    </div>
+    <div class="cfg">
+      <div class="ctrl-label">Ticker (opt)</div>
+      <input type="text" id="cfg-ticker" placeholder="SPY" style="width:64px;text-transform:uppercase">
     </div>
     <button id="run-btn" onclick="startRun()">▶ RUN</button>
   </div>
@@ -738,6 +746,7 @@ async function startRun() {
 
   document.getElementById('run-btn').disabled = true;
   setStatus('running', 'RUNNING');
+  document.getElementById('s-data').textContent = body.ticker || 'SYNTHETIC';
   startTimer();
 
   const body = {
@@ -746,6 +755,7 @@ async function startRun() {
     iterations: parseInt(document.getElementById('cfg-iter').value) || 20,
     target_survivors: parseInt(document.getElementById('cfg-target').value) || 3,
     cost_bps: parseFloat(document.getElementById('cfg-cost').value) || 8,
+    ticker: document.getElementById('cfg-ticker').value.trim().toUpperCase(),
   };
 
   let runId;
