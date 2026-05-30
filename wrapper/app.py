@@ -45,11 +45,13 @@ class RunRequest(BaseModel):
 
 
 def _fetch_prices(ticker: str) -> pd.Series:
-    from defeatbeta_api.data.ticker import Ticker  # noqa: PLC0415
-    df = Ticker(ticker.upper()).price()
-    df["report_date"] = pd.to_datetime(df["report_date"])
-    df = df.sort_values("report_date").set_index("report_date")
-    return df["close"].rename(ticker.upper())
+    import yfinance as yf  # noqa: PLC0415
+    df = yf.download(ticker.upper(), period="10y", auto_adjust=True, progress=False)
+    if df.empty:
+        raise ValueError(f"No data returned for ticker '{ticker}'. Check the symbol and try again.")
+    close = df["Close"].squeeze()
+    close.index = pd.to_datetime(close.index)
+    return close.rename(ticker.upper())
 
 
 def _synthetic_prices(n_bars: int = 2520, seed: int = 42) -> pd.Series:

@@ -39,7 +39,7 @@ figures = ["matplotlib>=3.8"]
 web = [
     "fastapi>=0.111",
     "uvicorn>=0.29",
-    "defeatbeta-api",
+    "yfinance>=0.2",
 ]
 
 [project.scripts]
